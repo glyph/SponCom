@@ -12,6 +12,9 @@ dependencies = [
   "click",
   "dbxs",
   "twisted",
+
+  # hmm where's the right place to put types-only deps
+  "types-click",
 ]
 
 [project.scripts]

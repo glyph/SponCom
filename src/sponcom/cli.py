@@ -1,5 +1,164 @@
+from __future__ import annotations
 
-from click import group, argument
+from time import time
+import sqlite3
+from dataclasses import dataclass, field
+from functools import wraps
+from pathlib import Path
+from typing import AsyncIterable, Callable, Concatenate, Coroutine, ParamSpec, Protocol
+from uuid import uuid4
+
+from click import argument, group
+from dbxs import accessor, many, query, statement
+from dbxs.dbapi_async import adaptSynchronousDriver, transaction
+from twisted.internet.defer import Deferred
+from twisted.internet.task import react
+
+schema = """
+
+CREATE TABLE IF NOT EXISTS sponsor (
+    id uuid PRIMARY KEY NOT NULL,
+    name text NOT NULL,
+    level integer NOT NULL,
+    current integer NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS gratitude (
+    id UUID NOT NULL,
+    sponsor_id UUID NOT NULL,
+    timestamp REAL NOT NULL,
+    description TEXT NOT NULL,
+
+    FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)
+);
+"""
+
+
+@dataclass
+class Gratitude:
+    storage: SponsorStorage = field(repr=False)
+    id: str
+    sponsor_id: str
+    timestamp: float
+    description: str
+
+
+@dataclass
+class Sponsor:
+    storage: SponsorStorage = field(repr=False)
+    name: str
+    level: int
+    current: int = None  # type:ignore[assignment]
+    id: str = field(default_factory=lambda: str(uuid4()))
+
+    def __post_init__(self) -> None:
+        if self.current is None:
+            self.current = self.level
+
+    async def save(self) -> None:
+        await self.storage.saveSponsor(
+            id=self.id, name=self.name, level=self.level, current=self.current
+        )
+
+    async def thank(self, id: str, description: str, timestamp: float) -> None:
+        await self.storage.addGratitude(
+            id=id,
+            sponsor_id=self.id,
+            timestamp=timestamp,
+            description=description,
+        )
+        self.current -= 1
+
+
+class SponsorStorage(Protocol):
+    """
+    Storage for sponsors.
+    """
+
+    @query(
+        sql="""
+        select name, level, current from sponsor;
+        """,
+        load=many(Sponsor),
+    )
+    def sponsors(self) -> AsyncIterable[Sponsor]:
+        ...
+
+    @statement(
+        sql="""
+        insert into sponsor(id, name, level, current)
+        values({id}, {name}, {level}, {current})
+        ON CONFLICT(sponsor.id)
+        DO UPDATE SET
+        (name, level, current) =
+        (excluded.name, excluded.level, excluded.current)
+        """
+    )
+    async def saveSponsor(
+        self,
+        id: str,
+        name: str,
+        level: int,
+        current: int,
+    ) -> None:
+        ...
+
+    @query(
+        sql="""
+        select name, level, current, id from sponsor
+        where current > 0
+        order by random()
+        limit {limit};
+        """,
+        load=many(Sponsor),
+    )
+    def draw(self, limit: int) -> AsyncIterable[Sponsor]:
+        ...
+
+    @query(
+        sql="""
+        select id, sponsor_id, timestamp, description
+        from gratitude
+        """,
+        load=many(Gratitude),
+    )
+    def listGratitude(self) -> AsyncIterable[Gratitude]:
+        ...
+
+    @statement(
+        sql="""
+        insert into gratitude(id, sponsor_id, timestamp, description)
+        values ({id}, {sponsor_id}, {timestamp}, {description})
+        """
+    )
+    async def addGratitude(
+        self, id: str, sponsor_id: str, timestamp: float, description: str
+    ) -> None:
+        ...
+
+    @statement(
+        sql="""
+        update sponsor set current = level;
+        """,
+    )
+    async def fullReset(self) -> None:
+        ...
+
+
+SponsorAccessor = accessor(SponsorStorage)
+
+
+def schemaed() -> sqlite3.Connection:
+    connection = sqlite3.connect(str(Path("~/.sponcom-v1.sqlite").expanduser()))
+    connection.executescript(schema)
+    return connection
+
+
+driver = adaptSynchronousDriver(
+    schemaed,
+    sqlite3.paramstyle,
+)
+
 
 @group()
 def main() -> None:
@@ -7,8 +166,59 @@ def main() -> None:
     Sponsored Commit message generator.
     """
 
+
+P = ParamSpec("P")
+
+
+def reactive(
+    thunk: Callable[Concatenate[object, P], Coroutine[Deferred[object], object, object]]
+) -> Callable[P, None]:
+    @wraps(thunk)
+    def cmd(*args, **kw) -> None:
+        react(lambda reactor: thunk(reactor, *args, **kw))
+
+    return cmd
+
+
+@main.command()
+@reactive
+async def list(reactor: object) -> None:
+    async with transaction(driver) as t:
+        db = SponsorAccessor(t)
+        async for sponsor in db.sponsors():
+            print(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
+
+
 @main.command()
 @argument("name")
-def add(name: str) -> None:
-    print("add", name)
+@argument("level", type=int)
+@reactive
+async def add(reactor: object, name: str, level: int) -> None:
+    async with transaction(driver) as t:
+        # print(f"adding sponsor <{name}> at <{level}>")
+        await Sponsor(SponsorAccessor(t), name, level).save()
+        print("saved!")
 
+
+@main.command()
+@argument("description")
+@argument("number", type=int, default=3)
+@reactive
+async def thank(reactor: object, description: str, number: int) -> None:
+    for ignored in range(2):
+        async with transaction(driver) as t:
+            names = []
+            gratitudeID = str(uuid4())
+            timestamp = time()
+            acc = SponsorAccessor(t)
+            async for sponsor in acc.draw(3):
+                await sponsor.thank(gratitudeID, description, timestamp)
+                await sponsor.save()
+                names.append(sponsor.name)
+            if names:
+                names[-1] = "and "+ names[-1]
+                print((", " if len(names) > 2 else " ").join(names))
+                return
+            else:
+                await acc.fullReset()
+                print("*")
