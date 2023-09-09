@@ -10,3 +10,4 @@ def main() -> None:
 @argument("name")
 def add(name: str) -> None:
     print("add", name)
+
