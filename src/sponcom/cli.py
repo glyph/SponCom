@@ -291,9 +291,10 @@ async def prepare(
         msg = wrap(
             dedent(
                 f"""\
-        This commit was sponsored by my patrons {c}.  If you want to join them,
-        you can support my work at https://patreon.com/creatorglyph.
-        """
+                This commit was sponsored by {c}, and my other patrons.
+                If you want to join them, you can support my work at
+                https://patreon.com/creatorglyph.
+                """
             )
         )
         f.write("\n".join(msg))
@@ -332,7 +333,8 @@ async def contributors(howMany: int, description: str) -> str:
                 await sponsor.save()
                 names.append(sponsor.name)
             if names:
-                names[-1] = "and " + names[-1]
+                if len(names) > 1:
+                    names[-1] = "and " + names[-1]
                 return (", " if len(names) > 2 else " ").join(names)
             else:
                 await acc.fullReset()
