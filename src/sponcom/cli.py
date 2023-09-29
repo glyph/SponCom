@@ -221,12 +221,12 @@ async def add(reactor: object, name: str, level: int) -> None:
 # The first is the name of the file that contains the commit log message.
 
 
-@argument("preMessagePath")
+@argument("premessagepath")
 
 # The second is the source of the commit message, and can be:
 
 
-@argument("commitSource", default=None)
+@argument("commitsource", default=None, required=False)
 
 # - message (if a -m or -F option was given);
 
@@ -241,21 +241,20 @@ async def add(reactor: object, name: str, level: int) -> None:
 #   given).
 
 
-@argument("commitObject", default=None)
-async def prepare(
-    reactor: object,
-    preMessagePath: str,
-    commitSource: Literal["message", "template", "merge", "squash", "commit"] | None,
-    commitObject: str | None = None,
+@argument("commitobject", default=None, required=False)
+def prepare(
+    premessagepath: str,
+    commitsource: Literal["message", "template", "merge", "squash", "commit"] | None,
+    commitobject: str | None = None,
 ) -> None:
     """
     Git prepare-commit-message hook.
     """
     echo("preparing")
-    with Path(preMessagePath).open("rw+") as f:
-        echo(f"preparing {preMessagePath}")
+    with Path(premessagepath).open("w+") as f:
+        echo(f"preparing {premessagepath}")
         f.write(
-            f"\n\n# Debug: {preMessagePath!r}, {commitSource!r}, {commitObject!r}\n"
+            f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         )
 
 
