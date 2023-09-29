@@ -1,14 +1,25 @@
 from __future__ import annotations
 
-from time import time
 import sqlite3
 from dataclasses import dataclass, field
 from functools import wraps
+from os import umask
 from pathlib import Path
-from typing import AsyncIterable, Callable, Concatenate, Coroutine, ParamSpec, Protocol
+from sys import argv
+from textwrap import dedent
+from time import time
+from typing import (
+    AsyncIterable,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Literal,
+    ParamSpec,
+    Protocol,
+)
 from uuid import uuid4
 
-from click import argument, group
+from click import ClickException, argument, echo, group
 from dbxs import accessor, many, query, statement
 from dbxs.dbapi_async import adaptSynchronousDriver, transaction
 from twisted.internet.defer import Deferred
@@ -186,7 +197,7 @@ async def list(reactor: object) -> None:
     async with transaction(driver) as t:
         db = SponsorAccessor(t)
         async for sponsor in db.sponsors():
-            print(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
+            echo(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
 
 
 @main.command()
@@ -197,7 +208,95 @@ async def add(reactor: object, name: str, level: int) -> None:
     async with transaction(driver) as t:
         # print(f"adding sponsor <{name}> at <{level}>")
         await Sponsor(SponsorAccessor(t), name, level).save()
-        print("saved!")
+        echo("saved!")
+
+
+# This is the git prepare-commit-message hook.
+
+# It takes one to three parameters.
+
+
+@main.command()
+
+# The first is the name of the file that contains the commit log message.
+
+
+@argument("preMessagePath")
+
+# The second is the source of the commit message, and can be:
+
+
+@argument("commitSource", default=None)
+
+# - message (if a -m or -F option was given);
+
+# - template (if a -t option was given or the configuration option
+#   commit.template is set);
+
+# - merge (if the commit is a merge or a .git/MERGE_MSG file exists);
+
+# - squash (if a .git/SQUASH_MSG file exists); or
+
+# - commit, followed by a commit object name (if a -c, -C or --amend option was
+#   given).
+
+
+@argument("commitObject", default=None)
+async def prepare(
+    reactor: object,
+    preMessagePath: str,
+    commitSource: Literal["message", "template", "merge", "squash", "commit"] | None,
+    commitObject: str | None = None,
+) -> None:
+    """
+    Git prepare-commit-message hook.
+    """
+    with Path(preMessagePath).open("rw+") as f:
+        f.write(
+            f"\n\n# Debug: {preMessagePath!r}, {commitSource!r}, {commitObject!r}\n"
+        )
+
+
+@main.command()
+def install() -> None:
+    gitdir = Path(".git")
+    if not gitdir.is_dir():
+        raise ClickException("Not in a git repository root.")
+    hooksdir = gitdir / "hooks"
+    hooksdir.mkdir(mode=0o755, parents=False, exist_ok=True)
+    hookpath = hooksdir / "prepare-commit-message"
+    with hookpath.open("w") as f:
+        f.write(
+            dedent(
+                f"""\
+                #!/bin/sh
+                exec '{argv[0]}' prepare "$@";
+                """
+            )
+        )
+    hookpath.chmod(0o755)
+    echo(f"installed {hookpath}")
+
+
+async def contributors(howMany: int, description) -> str:
+    for repeat in range(2):
+        async with transaction(driver) as t:
+            names = []
+            gratitudeID = str(uuid4())
+            timestamp = time()
+            acc = SponsorAccessor(t)
+            async for sponsor in acc.draw(howMany):
+                await sponsor.thank(gratitudeID, description, timestamp)
+                await sponsor.save()
+                names.append(sponsor.name)
+            if names:
+                names[-1] = "and " + names[-1]
+                return (", " if len(names) > 2 else " ").join(names)
+            else:
+                await acc.fullReset()
+                echo("* resetting")
+
+    assert False, "this should be unreachable"
 
 
 @main.command()
@@ -205,20 +304,4 @@ async def add(reactor: object, name: str, level: int) -> None:
 @argument("number", type=int, default=3)
 @reactive
 async def thank(reactor: object, description: str, number: int) -> None:
-    for ignored in range(2):
-        async with transaction(driver) as t:
-            names = []
-            gratitudeID = str(uuid4())
-            timestamp = time()
-            acc = SponsorAccessor(t)
-            async for sponsor in acc.draw(3):
-                await sponsor.thank(gratitudeID, description, timestamp)
-                await sponsor.save()
-                names.append(sponsor.name)
-            if names:
-                names[-1] = "and "+ names[-1]
-                print((", " if len(names) > 2 else " ").join(names))
-                return
-            else:
-                await acc.fullReset()
-                print("*")
+    echo(contributors(number, description))
