@@ -6,17 +6,10 @@ from functools import wraps
 from os import umask
 from pathlib import Path
 from sys import argv
-from textwrap import dedent
+from textwrap import dedent, wrap
 from time import time
-from typing import (
-    AsyncIterable,
-    Callable,
-    Concatenate,
-    Coroutine,
-    Literal,
-    ParamSpec,
-    Protocol,
-)
+from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
+                    ParamSpec, Protocol)
 from uuid import uuid4
 
 from click import ClickException, argument, echo, group
@@ -242,7 +235,9 @@ async def add(reactor: object, name: str, level: int) -> None:
 
 
 @argument("commitobject", default=None, required=False)
-def prepare(
+@reactive
+async def prepare(
+    reactor: object,
     premessagepath: str,
     commitsource: Literal["message", "template", "merge", "squash", "commit"] | None,
     commitobject: str | None = None,
@@ -251,9 +246,16 @@ def prepare(
     Git prepare-commit-message hook.
     """
     with Path(premessagepath).open("a+") as f:
-        f.write(
-            f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
-        )
+        # f.write(
+        #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
+        # )
+        c = await contributors(3, description="commit {commitsource} {commitobject}")
+        msg = wrap(dedent(f"""\
+        This commit was sponsored by my patrons {c}.  If you want to join them,
+        you can support my work at https://patreon.com/creatorglyph.
+        """))
+        f.write("\n".join(msg))
+
 
 
 @main.command()
@@ -277,7 +279,7 @@ def install() -> None:
     echo(f"installed {hookpath}")
 
 
-async def contributors(howMany: int, description) -> str:
+async def contributors(howMany: int, description: str) -> str:
     for repeat in range(2):
         async with transaction(driver) as t:
             names = []
