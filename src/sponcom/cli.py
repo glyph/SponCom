@@ -276,6 +276,10 @@ async def prepare(
     """
     Git prepare-commit-message hook.
     """
+    from pprint import pformat
+    import os
+
+    echo(pformat(dict(os.environ)))
     with Path(premessagepath).open("a+") as f:
         # f.write(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
