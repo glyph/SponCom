@@ -9,8 +9,15 @@ from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
 from time import time
-from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
-                    ParamSpec, Protocol)
+from typing import (
+    AsyncIterable,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Literal,
+    ParamSpec,
+    Protocol,
+)
 from uuid import uuid4
 
 from click import ClickException, argument, echo, group
@@ -203,6 +210,7 @@ async def list(reactor: object) -> None:
         async for sponsor in db.sponsors():
             echo(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
 
+
 @main.command()
 @reactive
 async def history(reactor: object) -> None:
@@ -210,8 +218,11 @@ async def history(reactor: object) -> None:
         db = SponsorAccessor(t)
         async for gratitude in db.listGratitude():
             sponsor = await db.sponsorByID(gratitude.sponsor_id)
-            isotime = datetime.fromtimestamp(gratitude.timestamp).astimezone().isoformat()
+            isotime = (
+                datetime.fromtimestamp(gratitude.timestamp).astimezone().isoformat()
+            )
             echo(f"{isotime} {sponsor.name!r} {gratitude.description!r}")
+
 
 @main.command()
 @argument("name")
@@ -269,13 +280,19 @@ async def prepare(
         # f.write(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         # )
-        c = await contributors(3, description=f"commit {commitsource} {commitobject}")
-        msg = wrap(dedent(f"""\
+        c = await contributors(
+            3,
+            description=f"commit, in {Path.cwd} {commitsource or ''} {commitobject or ''}",
+        )
+        msg = wrap(
+            dedent(
+                f"""\
         This commit was sponsored by my patrons {c}.  If you want to join them,
         you can support my work at https://patreon.com/creatorglyph.
-        """))
+        """
+            )
+        )
         f.write("\n".join(msg))
-
 
 
 @main.command()
