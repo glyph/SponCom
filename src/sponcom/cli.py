@@ -282,7 +282,7 @@ async def prepare(
         # )
         c = await contributors(
             3,
-            description=f"commit, in {Path.cwd} {commitsource or ''} {commitobject or ''}",
+            description=f"commit, in {str(Path.cwd().absolute())!r} {commitsource or ''} {commitobject or ''}",
         )
         msg = wrap(
             dedent(
