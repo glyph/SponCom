@@ -266,7 +266,7 @@ def install() -> None:
         raise ClickException("Not in a git repository root.")
     hooksdir = gitdir / "hooks"
     hooksdir.mkdir(mode=0o755, parents=False, exist_ok=True)
-    hookpath = hooksdir / "prepare-commit-message"
+    hookpath = hooksdir / "prepare-commit-msg"
     with hookpath.open("w") as f:
         f.write(
             dedent(
