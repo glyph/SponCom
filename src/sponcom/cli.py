@@ -240,7 +240,7 @@ async def add(reactor: object, name: str, level: int) -> None:
 # It takes one to three parameters.
 
 
-@main.command()
+@main.command(hidden=True)
 
 # The first is the name of the file that contains the commit log message.
 
