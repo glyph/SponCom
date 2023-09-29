@@ -22,3 +22,4 @@ sponcom = "sponcom.cli:main"
 
 [project.urls]
 Home = "https://glyph.im/sponcom/"
+

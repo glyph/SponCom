@@ -251,7 +251,9 @@ async def prepare(
     """
     Git prepare-commit-message hook.
     """
+    echo("preparing")
     with Path(preMessagePath).open("rw+") as f:
+        echo(f"preparing {preMessagePath}")
         f.write(
             f"\n\n# Debug: {preMessagePath!r}, {commitSource!r}, {commitObject!r}\n"
         )
