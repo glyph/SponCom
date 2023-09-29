@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import datetime
 from functools import wraps
 from os import umask
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
 from uuid import uuid4
 
 from click import ClickException, argument, echo, group
-from dbxs import accessor, many, query, statement
+from dbxs import accessor, many, one, query, statement
 from dbxs.dbapi_async import adaptSynchronousDriver, transaction
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
@@ -109,6 +110,15 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
+        select name, level, current from sponsor where id = {id};
+        """,
+        load=one(Sponsor),
+    )
+    async def sponsorByID(self, id: str) -> Sponsor:
+        ...
+
+    @query(
+        sql="""
         select name, level, current, id from sponsor
         where current > 0
         order by random()
@@ -123,6 +133,7 @@ class SponsorStorage(Protocol):
         sql="""
         select id, sponsor_id, timestamp, description
         from gratitude
+        order by timestamp asc
         """,
         load=many(Gratitude),
     )
@@ -192,6 +203,15 @@ async def list(reactor: object) -> None:
         async for sponsor in db.sponsors():
             echo(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
 
+@main.command()
+@reactive
+async def history(reactor: object) -> None:
+    async with transaction(driver) as t:
+        db = SponsorAccessor(t)
+        async for gratitude in db.listGratitude():
+            sponsor = await db.sponsorByID(gratitude.sponsor_id)
+            isotime = datetime.fromtimestamp(gratitude.timestamp).astimezone().isoformat()
+            echo(f"{isotime} {sponsor.name!r} {gratitude.description!r}")
 
 @main.command()
 @argument("name")
@@ -249,7 +269,7 @@ async def prepare(
         # f.write(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         # )
-        c = await contributors(3, description="commit {commitsource} {commitobject}")
+        c = await contributors(3, description=f"commit {commitsource} {commitobject}")
         msg = wrap(dedent(f"""\
         This commit was sponsored by my patrons {c}.  If you want to join them,
         you can support my work at https://patreon.com/creatorglyph.
