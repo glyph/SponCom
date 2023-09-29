@@ -250,9 +250,7 @@ def prepare(
     """
     Git prepare-commit-message hook.
     """
-    echo("preparing")
     with Path(premessagepath).open("w+") as f:
-        echo(f"preparing {premessagepath}")
         f.write(
             f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         )
