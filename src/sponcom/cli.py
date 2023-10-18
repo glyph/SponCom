@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
+from os import popen
 from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS precommit (
     pre_message_path TEXT,
     commit_source TEXT,
     commit_object TEXT,
+    parent_commit TEXT NOT NULL,
 
     FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)
 );
@@ -178,19 +180,21 @@ class SponsorStorage(Protocol):
     @statement(
         sql="""
         INSERT INTO precommit (gratitude_id, commit_message, working_directory,
-                               pre_message_path, commit_source, commit_object)
-        VALUES ({gratitude_id}, {userMessage}, {workingDirectory},
-                {preMessagePath}, {commitSource}, {commitObject})
+                               pre_message_path, commit_source, commit_object,
+                               parent_commit)
+        VALUES ({gratitudeID}, {userMessage}, {workingDirectory},
+                {preMessagePath}, {commitSource}, {commitObject}, {parentCommit})
         """
     )
     async def addCommit(
         self,
-        gratitude_id: str,
+        gratitudeID: str,
         userMessage: str,
         workingDirectory: str,
         preMessagePath: str,
         commitSource: str | None,
         commitObject: str | None,
+        parentCommit: str,
     ) -> None:
         ...
 
@@ -335,6 +339,9 @@ async def prepare(
         # f.write(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         # )
+        with popen("git rev-parse HEAD") as gitProcess:
+            parentCommit = gitProcess.read()
+
         c = await contributors(
             3,
             CommitDescriber(
@@ -343,6 +350,7 @@ async def prepare(
                 str(Path.cwd().absolute()),
                 commitsource,
                 commitobject,
+                parentCommit,
             ),
         )
         msg = wrap(
@@ -398,6 +406,7 @@ class CommitDescriber:
     workingDirectory: str
     commitSource: str | None
     commitObject: str | None
+    parentCommit: str
 
     def descriptionString(self) -> str:
         return f"commit from {self.workingDirectory}"
@@ -415,6 +424,7 @@ class CommitDescriber:
             self.preMessagePath,
             self.commitSource,
             self.commitObject,
+            self.parentCommit,
         )
 
 @dataclass
