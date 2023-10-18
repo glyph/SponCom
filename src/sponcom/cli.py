@@ -4,24 +4,16 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
-from os import umask
 from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
 from time import time
-from typing import (
-    AsyncIterable,
-    Callable,
-    Concatenate,
-    Coroutine,
-    Literal,
-    ParamSpec,
-    Protocol,
-)
+from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
+                    ParamSpec, Protocol)
 from uuid import uuid4
 
 from click import ClickException, argument, echo, group
-from dbxs import accessor, many, one, query, statement
+from dbxs import accessor, many, maybe, one, query, statement
 from dbxs.dbapi_async import adaptSynchronousDriver, transaction
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
@@ -43,6 +35,18 @@ CREATE TABLE IF NOT EXISTS gratitude (
 
     FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)
 );
+
+CREATE TABLE IF NOT EXISTS precommit (
+    gratitude_id UUID NOT NULL,
+    commit_message TEXT NOT NULL,
+    working_directory TEXT NOT NULL,
+    pre_message_path TEXT,
+    commit_source TEXT,
+    commit_object TEXT,
+
+    FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)
+);
+
 """
 
 
@@ -72,15 +76,28 @@ class Sponsor:
             id=self.id, name=self.name, level=self.level, current=self.current
         )
 
-    async def thank(self, id: str, description: str, timestamp: float) -> None:
+    async def thank(self, timestamp: float, describer: GratitudeDescriber) -> None:
+        gratitudeID = str(uuid4())
         await self.storage.addGratitude(
-            id=id,
+            id=gratitudeID,
             sponsor_id=self.id,
             timestamp=timestamp,
-            description=description,
+            description=describer.descriptionString(),
         )
+        await describer.describeGratitude(self.storage, timestamp, gratitudeID)
         self.current -= 1
+        await self.save()
 
+
+@dataclass
+class CommitRecord:
+    storage: SponsorStorage
+    gratitudeID: str
+    commitMessage: str
+    workingDirectory: str
+    preMessagePath: str
+    commitSource: str | None
+    commitObject: str | None
 
 class SponsorStorage(Protocol):
     """
@@ -98,12 +115,12 @@ class SponsorStorage(Protocol):
 
     @statement(
         sql="""
-        insert into sponsor(id, name, level, current)
-        values({id}, {name}, {level}, {current})
+        INSERT INTO sponsor(id, name, level, current)
+        VALUES({id}, {name}, {level}, {current})
         ON CONFLICT(sponsor.id)
         DO UPDATE SET
         (name, level, current) =
-        (excluded.name, excluded.level, excluded.current)
+        (EXCLUDED.name, EXCLUDED.level, EXCLUDED.current)
         """
     )
     async def saveSponsor(
@@ -117,7 +134,7 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        select name, level, current from sponsor where id = {id};
+        SELECT name, level, current FROM sponsor WHERE id = {id};
         """,
         load=one(Sponsor),
     )
@@ -126,10 +143,10 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        select name, level, current, id from sponsor
-        where current > 0
-        order by random()
-        limit {limit};
+        SELECT name, level, current, id FROM sponsor
+        WHERE current > 0
+        ORDER BY random()
+        LIMIT {limit};
         """,
         load=many(Sponsor),
     )
@@ -138,9 +155,9 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        select id, sponsor_id, timestamp, description
-        from gratitude
-        order by timestamp asc
+        SELECT id, sponsor_id, timestamp, description
+        FROM gratitude
+        ORDER BY timestamp ASC
         """,
         load=many(Gratitude),
     )
@@ -149,8 +166,8 @@ class SponsorStorage(Protocol):
 
     @statement(
         sql="""
-        insert into gratitude(id, sponsor_id, timestamp, description)
-        values ({id}, {sponsor_id}, {timestamp}, {description})
+        INSERT INTO gratitude(id, sponsor_id, timestamp, description)
+        VALUES ({id}, {sponsor_id}, {timestamp}, {description})
         """
     )
     async def addGratitude(
@@ -160,10 +177,40 @@ class SponsorStorage(Protocol):
 
     @statement(
         sql="""
+        INSERT INTO precommit (gratitude_id, commit_message, working_directory,
+                               pre_message_path, commit_source, commit_object)
+        VALUES ({gratitude_id}, {userMessage}, {workingDirectory},
+                {preMessagePath}, {commitSource}, {commitObject})
+        """
+    )
+    async def addCommit(
+        self,
+        gratitude_id: str,
+        userMessage: str,
+        workingDirectory: str,
+        preMessagePath: str,
+        commitSource: str | None,
+        commitObject: str | None,
+    ) -> None:
+        ...
+
+    @statement(
+        sql="""
         update sponsor set current = level;
         """,
     )
     async def fullReset(self) -> None:
+        ...
+
+    @query(
+        sql="""
+        SELECT gratitude_id, commit_message, working_directory, pre_message_path, commit_source, commit_object
+        FROM precommit
+        WHERE gratitude_id = {gratitude_id}
+        """,
+        load=maybe(CommitRecord),
+    )
+    async def commitForGratitude(self, gratitude_id: str) -> CommitRecord | None:
         ...
 
 
@@ -222,6 +269,9 @@ async def history(reactor: object) -> None:
                 datetime.fromtimestamp(gratitude.timestamp).astimezone().isoformat()
             )
             echo(f"{isotime} {sponsor.name!r} {gratitude.description!r}")
+            commit = await db.commitForGratitude(gratitude.id)
+            if commit is not None:
+                echo(f"    commit in {commit.workingDirectory}")
 
 
 @main.command()
@@ -276,17 +326,24 @@ async def prepare(
     """
     Git prepare-commit-message hook.
     """
-    from pprint import pformat
     import os
+    from pprint import pformat
 
     echo(pformat(dict(os.environ)))
-    with Path(premessagepath).open("a+") as f:
+    with Path(premessagepath).open("r+") as f:
+        userMessage = f.read()
         # f.write(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         # )
         c = await contributors(
             3,
-            description=f"commit, in {str(Path.cwd().absolute())!r} {commitsource or ''} {commitobject or ''}",
+            CommitDescriber(
+                userMessage,
+                premessagepath,
+                str(Path.cwd().absolute),
+                commitsource,
+                commitobject,
+            ),
         )
         msg = wrap(
             dedent(
