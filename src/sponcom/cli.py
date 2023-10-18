@@ -100,6 +100,7 @@ class CommitRecord:
     preMessagePath: str
     commitSource: str | None
     commitObject: str | None
+    parentCommit: str
 
 class SponsorStorage(Protocol):
     """
@@ -208,7 +209,7 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT gratitude_id, commit_message, working_directory, pre_message_path, commit_source, commit_object
+        SELECT gratitude_id, commit_message, working_directory, pre_message_path, commit_source, commit_object, parent_commit
         FROM precommit
         WHERE gratitude_id = {gratitude_id}
         """,
@@ -275,7 +276,7 @@ async def history(reactor: object) -> None:
             echo(f"{isotime} {sponsor.name!r} {gratitude.description!r}")
             commit = await db.commitForGratitude(gratitude.id)
             if commit is not None:
-                echo(f"    commit in {commit.workingDirectory}")
+                echo(f"    commit in {commit.workingDirectory} ({commit.parentCommit})")
 
 
 @main.command()
@@ -340,7 +341,7 @@ async def prepare(
         #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
         # )
         with popen("git rev-parse HEAD") as gitProcess:
-            parentCommit = gitProcess.read()
+            parentCommit = gitProcess.read().strip()
 
         c = await contributors(
             3,
