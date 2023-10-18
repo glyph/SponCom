@@ -9,8 +9,15 @@ from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
 from time import time
-from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
-                    ParamSpec, Protocol)
+from typing import (
+    AsyncIterable,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Literal,
+    ParamSpec,
+    Protocol,
+)
 from uuid import uuid4
 
 from click import ClickException, argument, echo, group
@@ -101,6 +108,7 @@ class CommitRecord:
     commitSource: str | None
     commitObject: str | None
     parentCommit: str
+
 
 class SponsorStorage(Protocol):
     """
@@ -428,11 +436,14 @@ class CommitDescriber:
             self.parentCommit,
         )
 
+
 @dataclass
 class StringDescriber:
     string: str
+
     def descriptionString(self) -> str:
         return self.string
+
     async def describeGratitude(
         self,
         storage: SponsorStorage,
@@ -440,6 +451,7 @@ class StringDescriber:
         gratitudeID: str,
     ) -> None:
         ...
+
 
 async def contributors(howMany: int, describer: GratitudeDescriber) -> str:
     for repeat in range(2):
