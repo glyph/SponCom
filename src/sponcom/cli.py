@@ -345,9 +345,7 @@ async def prepare(
     echo(pformat(dict(os.environ)))
     with Path(premessagepath).open("r+") as f:
         userMessage = f.read()
-        # f.write(
-        #     f"\n\n# Debug: {premessagepath!r}, {commitsource!r}, {commitobject!r}\n"
-        # )
+
         with popen("git rev-parse HEAD") as gitProcess:
             parentCommit = gitProcess.read().strip()
 
@@ -371,6 +369,8 @@ async def prepare(
                 """
             )
         )
+        if not userMessage.endswith("\n"):
+            f.write("\n")
         f.write("\n".join(msg))
 
 
