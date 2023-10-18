@@ -340,7 +340,7 @@ async def prepare(
             CommitDescriber(
                 userMessage,
                 premessagepath,
-                str(Path.cwd().absolute),
+                str(Path.cwd().absolute()),
                 commitsource,
                 commitobject,
             ),
@@ -378,16 +378,66 @@ def install() -> None:
     echo(f"installed {hookpath}")
 
 
-async def contributors(howMany: int, description: str) -> str:
+class GratitudeDescriber(Protocol):
+    async def describeGratitude(
+        self,
+        storage: SponsorStorage,
+        timestamp: float,
+        gratitudeID: str,
+    ) -> None:
+        ...
+
+    def descriptionString(self) -> str:
+        ...
+
+
+@dataclass
+class CommitDescriber:
+    userMessage: str
+    preMessagePath: str
+    workingDirectory: str
+    commitSource: str | None
+    commitObject: str | None
+
+    def descriptionString(self) -> str:
+        return f"commit from {self.workingDirectory}"
+
+    async def describeGratitude(
+        self,
+        storage: SponsorStorage,
+        timestamp: float,
+        gratitudeID: str,
+    ) -> None:
+        await storage.addCommit(
+            gratitudeID,
+            self.userMessage,
+            self.workingDirectory,
+            self.preMessagePath,
+            self.commitSource,
+            self.commitObject,
+        )
+
+@dataclass
+class StringDescriber:
+    string: str
+    def descriptionString(self) -> str:
+        return self.string
+    async def describeGratitude(
+        self,
+        storage: SponsorStorage,
+        timestamp: float,
+        gratitudeID: str,
+    ) -> None:
+        ...
+
+async def contributors(howMany: int, describer: GratitudeDescriber) -> str:
     for repeat in range(2):
         async with transaction(driver) as t:
             names = []
-            gratitudeID = str(uuid4())
             timestamp = time()
             acc = SponsorAccessor(t)
             async for sponsor in acc.draw(howMany):
-                await sponsor.thank(gratitudeID, description, timestamp)
-                await sponsor.save()
+                await sponsor.thank(timestamp, describer)
                 names.append(sponsor.name)
             if names:
                 if len(names) > 1:
@@ -405,4 +455,4 @@ async def contributors(howMany: int, description: str) -> str:
 @argument("number", type=int, default=3)
 @reactive
 async def thank(reactor: object, description: str, number: int) -> None:
-    echo(contributors(number, description))
+    echo(await contributors(number, StringDescriber(description)))
