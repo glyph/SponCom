@@ -369,10 +369,12 @@ async def prepare(
                 """
             )
         )
-        if userMessage[:-1] != '\n':
+
+        if userMessage[-1:] != '\n':
             f.write("\n\n")
-        elif userMessage[:-2] != '\n\n':
+        elif userMessage[-2:] != '\n\n':
             f.write("\n")
+
         f.write("\n".join(msg))
 
 
