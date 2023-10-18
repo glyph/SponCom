@@ -370,7 +370,10 @@ async def prepare(
             )
         )
         if not userMessage.endswith("\n"):
+            print("adding newline?")
             f.write("\n")
+        else:
+            print("no extra newline:", repr(userMessage))
         f.write("\n".join(msg))
 
 
