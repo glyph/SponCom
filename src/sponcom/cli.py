@@ -98,22 +98,19 @@ async def add(reactor: object, name: str, level: int) -> None:
         echo("saved!")
 
 
+
+
+
 # This is the git prepare-commit-message hook.
+@main.command(hidden=True)
 
 # It takes one to three parameters.
 
-
-@main.command(hidden=True)
-
+@argument("premessagepath")
 # The first is the name of the file that contains the commit log message.
 
-
-@argument("premessagepath")
-
-# The second is the source of the commit message, and can be:
-
-
 @argument("commitsource", default=None, required=False)
+# The second is the source of the commit message, and can be:
 
 # - message (if a -m or -F option was given);
 
@@ -127,8 +124,10 @@ async def add(reactor: object, name: str, level: int) -> None:
 # - commit, followed by a commit object name (if a -c, -C or --amend option was
 #   given).
 
-
 @argument("commitobject", default=None, required=False)
+# If the second argument is 'commit', then the third will be a commit object
+# name (if a -c, -C or --amend option was given).
+
 @reactive
 async def prepare(
     reactor: object,
