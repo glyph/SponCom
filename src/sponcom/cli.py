@@ -1,289 +1,27 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
 from os import popen
 from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
-from time import time
-from typing import (
-    AsyncIterable,
-    Callable,
-    Concatenate,
-    Coroutine,
-    Literal,
-    ParamSpec,
-    Protocol,
-    TypeVar,
-)
-from uuid import uuid4
+from typing import Callable, Concatenate, Coroutine, Literal, ParamSpec, TypeVar
 
 from click import ClickException, argument, echo, group
-from dbxs import accessor, many, maybe, one, query, statement
+from dbxs import accessor
 from dbxs.dbapi_async import adaptSynchronousDriver, transaction
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
 
+from sponcom.database import SponsorStorage
+from sponcom.models import CommitDescriber, Sponsor, StringDescriber, builder, patrons
+from sponcom.schema_builder import SchemaBuilder
+
 # This should probably go in a configuration file.  Maybe a template?
 creatorURL = "https://patreon.com/creatorglyph"
 T = TypeVar("T")
-
-
-@dataclass
-class SchemaBuilder:
-    schema: str = ""
-    pendingColumns: list[str] = field(default_factory=lambda: [])
-    constraintsYet: bool = False
-
-    def table(self, tableName: str) -> Callable[[T], T]:
-
-        def buildSchema(c: T) -> T:
-            pendingColumns, self.pendingColumns = self.pendingColumns, []
-            sep = ",\n    "
-            partialSchema = f"""
-            CREATE TABLE IF NOT EXISTS {tableName} (
-                {sep.join(pendingColumns)}
-            );
-            """
-            self.schema += partialSchema
-            c.__schema__ = partialSchema  # type:ignore
-            return c
-
-        return buildSchema
-
-    def column(self, columnText: str) -> None:
-        self.constraintsYet = False
-        self.pendingColumns.append(columnText)
-
-    def constraint(self, constraintText: str) -> None:
-        if not self.constraintsYet:
-            constraintText = f"\n    {constraintText}"
-        self.constraintsYet = True
-        self.pendingColumns.append(constraintText)
-
-
-builder = SchemaBuilder()
-
-
-@builder.table("sponsor")
-@dataclass
-class Sponsor:
-    storage: SponsorStorage = field(repr=False)
-
-    name: str
-    builder.column("name TEXT NOT NULL")
-
-    level: int
-    builder.column("level INTEGER NOT NULL")
-
-    current: int = None  # type:ignore[assignment]
-    # `current` is only None in the window between instantiation and
-    # __post_init__.  It defaults to being the same value as `level`.
-    builder.column("current INTEGER NOT NULL")
-
-    id: str = field(default_factory=lambda: str(uuid4()))
-    builder.column("id uuid PRIMARY KEY NOT NULL")
-
-    def __post_init__(self) -> None:
-        if self.current is None:
-            self.current = self.level
-
-    async def save(self) -> None:
-        await self.storage.saveSponsor(
-            id=self.id, name=self.name, level=self.level, current=self.current
-        )
-
-    async def thank(self, timestamp: float, describer: GratitudeDescriber) -> None:
-        gratitudeID = str(uuid4())
-        await self.storage.addGratitude(
-            id=gratitudeID,
-            sponsor_id=self.id,
-            timestamp=timestamp,
-            description=describer.descriptionString(),
-        )
-        await describer.describeGratitude(self.storage, timestamp, gratitudeID)
-        self.current -= 1
-        await self.save()
-
-
-@builder.table("gratitude")
-@dataclass
-class Gratitude:
-    storage: SponsorStorage = field(repr=False)
-    id: str
-    builder.column("id UUID NOT NULL")
-
-    sponsor_id: str
-    builder.column("sponsor_id UUID NOT NULL")
-
-    timestamp: float
-    builder.column("timestamp REAL NOT NULL")
-
-    description: str
-    builder.column("description TEXT NOT NULL")
-
-    builder.constraint("FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)")
-
-
-@builder.table("precommit")
-@dataclass
-class CommitRecord:
-    storage: SponsorStorage
-
-    gratitudeID: str
-    builder.column("gratitude_id UUID NOT NULL")
-
-    commitMessage: str
-    builder.column("commit_message TEXT NOT NULL")
-
-    workingDirectory: str
-    builder.column("working_directory TEXT NOT NULL")
-
-    preMessagePath: str
-    builder.column("pre_message_path TEXT")
-
-    commitSource: str | None
-    builder.column("commit_source TEXT")
-
-    commitObject: str | None
-    builder.column("commit_object TEXT")
-
-    parentCommit: str
-    builder.column("parent_commit TEXT NOT NULL")
-
-    builder.constraint("FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)")
-
-
-class SponsorStorage(Protocol):
-    """
-    Storage for sponsors.
-    """
-
-    @query(
-        sql="""
-        SELECT
-            name, level, current
-        FROM sponsor;
-        """,
-        load=many(Sponsor),
-    )
-    def sponsors(self) -> AsyncIterable[Sponsor]:
-        ...
-
-    @statement(
-        sql="""
-        INSERT INTO sponsor(id, name, level, current)
-        VALUES({id}, {name}, {level}, {current})
-        ON CONFLICT(sponsor.id)
-        DO UPDATE SET
-        (name, level, current) =
-        (EXCLUDED.name, EXCLUDED.level, EXCLUDED.current)
-        """
-    )
-    async def saveSponsor(
-        self,
-        id: str,
-        name: str,
-        level: int,
-        current: int,
-    ) -> None:
-        ...
-
-    @query(
-        sql="""
-        SELECT
-            name, level, current
-        FROM sponsor
-        WHERE id = {id};
-        """,
-        load=one(Sponsor),
-    )
-    async def sponsorByID(self, id: str) -> Sponsor:
-        ...
-
-    @query(
-        sql="""
-        SELECT
-            name, level, current, id
-        FROM sponsor
-        WHERE current > 0
-        ORDER BY random()
-        LIMIT {limit};
-        """,
-        load=many(Sponsor),
-    )
-    def draw(self, limit: int) -> AsyncIterable[Sponsor]:
-        ...
-
-    @query(
-        sql="""
-        SELECT
-            id, sponsor_id, timestamp, description
-        FROM gratitude
-        ORDER BY timestamp ASC
-        """,
-        load=many(Gratitude),
-    )
-    def listGratitude(self) -> AsyncIterable[Gratitude]:
-        ...
-
-    @statement(
-        sql="""
-        INSERT INTO gratitude(id, sponsor_id, timestamp, description)
-        VALUES ({id}, {sponsor_id}, {timestamp}, {description})
-        """
-    )
-    async def addGratitude(
-        self, id: str, sponsor_id: str, timestamp: float, description: str
-    ) -> None:
-        ...
-
-    @statement(
-        sql="""
-        INSERT INTO precommit (gratitude_id, commit_message, working_directory,
-                               pre_message_path, commit_source, commit_object,
-                               parent_commit)
-        VALUES ({gratitudeID}, {userMessage}, {workingDirectory},
-                {preMessagePath}, {commitSource}, {commitObject}, {parentCommit})
-        """
-    )
-    async def addCommit(
-        self,
-        gratitudeID: str,
-        userMessage: str,
-        workingDirectory: str,
-        preMessagePath: str,
-        commitSource: str | None,
-        commitObject: str | None,
-        parentCommit: str,
-    ) -> None:
-        ...
-
-    @statement(
-        sql="""
-        UPDATE sponsor
-        SET current = level;
-        """,
-    )
-    async def fullReset(self) -> None:
-        ...
-
-    @query(
-        sql="""
-        SELECT
-            gratitude_id, commit_message, working_directory,
-            pre_message_path, commit_source, commit_object,
-            parent_commit
-        FROM precommit
-        WHERE gratitude_id = {gratitude_id}
-        """,
-        load=maybe(CommitRecord),
-    )
-    async def commitForGratitude(self, gratitude_id: str) -> CommitRecord | None:
-        ...
 
 
 SponsorAccessor = accessor(SponsorStorage)
@@ -294,6 +32,7 @@ def sqliteWithSchema(builder: SchemaBuilder) -> Callable[[], sqlite3.Connection]
         connection = sqlite3.connect(str(Path("~/.sponcom-v1.sqlite").expanduser()))
         connection.executescript(builder.schema)
         return connection
+
     return _
 
 
@@ -411,6 +150,7 @@ async def prepare(
             parentCommit = gitProcess.read().strip()
 
         patronText = await patrons(
+            driver,
             3,
             CommitDescriber(
                 userMessage,
@@ -460,87 +200,9 @@ def install() -> None:
     echo(f"installed {hookpath}")
 
 
-class GratitudeDescriber(Protocol):
-    async def describeGratitude(
-        self,
-        storage: SponsorStorage,
-        timestamp: float,
-        gratitudeID: str,
-    ) -> None:
-        ...
-
-    def descriptionString(self) -> str:
-        ...
-
-
-@dataclass
-class CommitDescriber:
-    userMessage: str
-    preMessagePath: str
-    workingDirectory: str
-    commitSource: str | None
-    commitObject: str | None
-    parentCommit: str
-
-    def descriptionString(self) -> str:
-        return f"commit from {self.workingDirectory}"
-
-    async def describeGratitude(
-        self,
-        storage: SponsorStorage,
-        timestamp: float,
-        gratitudeID: str,
-    ) -> None:
-        await storage.addCommit(
-            gratitudeID,
-            self.userMessage,
-            self.workingDirectory,
-            self.preMessagePath,
-            self.commitSource,
-            self.commitObject,
-            self.parentCommit,
-        )
-
-
-@dataclass
-class StringDescriber:
-    string: str
-
-    def descriptionString(self) -> str:
-        return self.string
-
-    async def describeGratitude(
-        self,
-        storage: SponsorStorage,
-        timestamp: float,
-        gratitudeID: str,
-    ) -> None:
-        ...
-
-
-async def patrons(howMany: int, describer: GratitudeDescriber) -> str:
-    for repeat in range(2):
-        async with transaction(driver) as t:
-            names = []
-            timestamp = time()
-            acc = SponsorAccessor(t)
-            async for sponsor in acc.draw(howMany):
-                await sponsor.thank(timestamp, describer)
-                names.append(sponsor.name)
-            if names:
-                if len(names) > 1:
-                    names[-1] = "and " + names[-1]
-                return (", " if len(names) > 2 else " ").join(names)
-            else:
-                await acc.fullReset()
-                echo("* resetting")
-
-    return "just me"
-
-
 @main.command()
 @argument("description")
 @argument("number", type=int, default=3)
 @reactive
 async def thank(reactor: object, description: str, number: int) -> None:
-    echo(await patrons(number, StringDescriber(description)))
+    echo(await patrons(driver, number, StringDescriber(description)))
