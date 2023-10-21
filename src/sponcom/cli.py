@@ -17,6 +17,7 @@ from typing import (
     Literal,
     ParamSpec,
     Protocol,
+    TypeVar,
 )
 from uuid import uuid4
 
@@ -26,55 +27,65 @@ from dbxs.dbapi_async import adaptSynchronousDriver, transaction
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
 
-schema = """
-
-CREATE TABLE IF NOT EXISTS sponsor (
-    id uuid PRIMARY KEY NOT NULL,
-    name text NOT NULL,
-    level integer NOT NULL,
-    current integer NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS gratitude (
-    id UUID NOT NULL,
-    sponsor_id UUID NOT NULL,
-    timestamp REAL NOT NULL,
-    description TEXT NOT NULL,
-
-    FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)
-);
-
-CREATE TABLE IF NOT EXISTS precommit (
-    gratitude_id UUID NOT NULL,
-    commit_message TEXT NOT NULL,
-    working_directory TEXT NOT NULL,
-    pre_message_path TEXT,
-    commit_source TEXT,
-    commit_object TEXT,
-    parent_commit TEXT NOT NULL,
-
-    FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)
-);
-
-"""
+# This should probably go in a configuration file.  Maybe a template?
+creatorURL = "https://patreon.com/creatorglyph"
+T = TypeVar("T")
 
 
 @dataclass
-class Gratitude:
-    storage: SponsorStorage = field(repr=False)
-    id: str
-    sponsor_id: str
-    timestamp: float
-    description: str
+class SchemaBuilder:
+    schema: str = ""
+    pendingColumns: list[str] = field(default_factory=lambda: [])
+    constraintsYet: bool = False
+
+    def table(self, tableName: str) -> Callable[[T], T]:
+
+        def buildSchema(c: T) -> T:
+            pendingColumns, self.pendingColumns = self.pendingColumns, []
+            sep = ",\n    "
+            partialSchema = f"""
+            CREATE TABLE IF NOT EXISTS {tableName} (
+                {sep.join(pendingColumns)}
+            );
+            """
+            self.schema += partialSchema
+            c.__schema__ = partialSchema  # type:ignore
+            return c
+
+        return buildSchema
+
+    def column(self, columnText: str) -> None:
+        self.constraintsYet = False
+        self.pendingColumns.append(columnText)
+
+    def constraint(self, constraintText: str) -> None:
+        if not self.constraintsYet:
+            constraintText = f"\n    {constraintText}"
+        self.constraintsYet = True
+        self.pendingColumns.append(constraintText)
 
 
+builder = SchemaBuilder()
+
+
+@builder.table("sponsor")
 @dataclass
 class Sponsor:
     storage: SponsorStorage = field(repr=False)
+
     name: str
+    builder.column("name TEXT NOT NULL")
+
     level: int
+    builder.column("level INTEGER NOT NULL")
+
     current: int = None  # type:ignore[assignment]
+    # `current` is only None in the window between instantiation and
+    # __post_init__.  It defaults to being the same value as `level`.
+    builder.column("current INTEGER NOT NULL")
+
     id: str = field(default_factory=lambda: str(uuid4()))
+    builder.column("id uuid PRIMARY KEY NOT NULL")
 
     def __post_init__(self) -> None:
         if self.current is None:
@@ -98,16 +109,52 @@ class Sponsor:
         await self.save()
 
 
+@builder.table("gratitude")
+@dataclass
+class Gratitude:
+    storage: SponsorStorage = field(repr=False)
+    id: str
+    builder.column("id UUID NOT NULL")
+
+    sponsor_id: str
+    builder.column("sponsor_id UUID NOT NULL")
+
+    timestamp: float
+    builder.column("timestamp REAL NOT NULL")
+
+    description: str
+    builder.column("description TEXT NOT NULL")
+
+    builder.constraint("FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)")
+
+
+@builder.table("precommit")
 @dataclass
 class CommitRecord:
     storage: SponsorStorage
+
     gratitudeID: str
+    builder.column("gratitude_id UUID NOT NULL")
+
     commitMessage: str
+    builder.column("commit_message TEXT NOT NULL")
+
     workingDirectory: str
+    builder.column("working_directory TEXT NOT NULL")
+
     preMessagePath: str
+    builder.column("pre_message_path TEXT")
+
     commitSource: str | None
+    builder.column("commit_source TEXT")
+
     commitObject: str | None
+    builder.column("commit_object TEXT")
+
     parentCommit: str
+    builder.column("parent_commit TEXT NOT NULL")
+
+    builder.constraint("FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)")
 
 
 class SponsorStorage(Protocol):
@@ -117,7 +164,9 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        select name, level, current from sponsor;
+        SELECT
+            name, level, current
+        FROM sponsor;
         """,
         load=many(Sponsor),
     )
@@ -145,7 +194,10 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT name, level, current FROM sponsor WHERE id = {id};
+        SELECT
+            name, level, current
+        FROM sponsor
+        WHERE id = {id};
         """,
         load=one(Sponsor),
     )
@@ -154,7 +206,9 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT name, level, current, id FROM sponsor
+        SELECT
+            name, level, current, id
+        FROM sponsor
         WHERE current > 0
         ORDER BY random()
         LIMIT {limit};
@@ -166,7 +220,8 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT id, sponsor_id, timestamp, description
+        SELECT
+            id, sponsor_id, timestamp, description
         FROM gratitude
         ORDER BY timestamp ASC
         """,
@@ -209,7 +264,8 @@ class SponsorStorage(Protocol):
 
     @statement(
         sql="""
-        update sponsor set current = level;
+        UPDATE sponsor
+        SET current = level;
         """,
     )
     async def fullReset(self) -> None:
@@ -217,7 +273,10 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT gratitude_id, commit_message, working_directory, pre_message_path, commit_source, commit_object, parent_commit
+        SELECT
+            gratitude_id, commit_message, working_directory,
+            pre_message_path, commit_source, commit_object,
+            parent_commit
         FROM precommit
         WHERE gratitude_id = {gratitude_id}
         """,
@@ -230,14 +289,16 @@ class SponsorStorage(Protocol):
 SponsorAccessor = accessor(SponsorStorage)
 
 
-def schemaed() -> sqlite3.Connection:
-    connection = sqlite3.connect(str(Path("~/.sponcom-v1.sqlite").expanduser()))
-    connection.executescript(schema)
-    return connection
+def sqliteWithSchema(builder: SchemaBuilder) -> Callable[[], sqlite3.Connection]:
+    def _() -> sqlite3.Connection:
+        connection = sqlite3.connect(str(Path("~/.sponcom-v1.sqlite").expanduser()))
+        connection.executescript(builder.schema)
+        return connection
+    return _
 
 
 driver = adaptSynchronousDriver(
-    schemaed,
+    sqliteWithSchema(builder),
     sqlite3.paramstyle,
 )
 
@@ -349,7 +410,7 @@ async def prepare(
         with popen("git rev-parse HEAD") as gitProcess:
             parentCommit = gitProcess.read().strip()
 
-        c = await contributors(
+        patronText = await patrons(
             3,
             CommitDescriber(
                 userMessage,
@@ -363,16 +424,16 @@ async def prepare(
         msg = wrap(
             dedent(
                 f"""\
-                This commit was sponsored by {c}, and my other patrons.
-                If you want to join them, you can support my work at
-                https://patreon.com/creatorglyph.
+                This commit was sponsored by {patronText}, and my other
+                patrons.  If you want to join them, you can support my work at
+                {creatorURL}.
                 """
             )
         )
 
-        if userMessage[-1:] != '\n':
+        if userMessage[-1:] != "\n":
             f.write("\n\n")
-        elif userMessage[-2:] != '\n\n':
+        elif userMessage[-2:] != "\n\n":
             f.write("\n")
 
         f.write("\n".join(msg))
@@ -457,7 +518,7 @@ class StringDescriber:
         ...
 
 
-async def contributors(howMany: int, describer: GratitudeDescriber) -> str:
+async def patrons(howMany: int, describer: GratitudeDescriber) -> str:
     for repeat in range(2):
         async with transaction(driver) as t:
             names = []
@@ -474,7 +535,7 @@ async def contributors(howMany: int, describer: GratitudeDescriber) -> str:
                 await acc.fullReset()
                 echo("* resetting")
 
-    assert False, "this should be unreachable"
+    return "just me"
 
 
 @main.command()
@@ -482,4 +543,4 @@ async def contributors(howMany: int, describer: GratitudeDescriber) -> str:
 @argument("number", type=int, default=3)
 @reactive
 async def thank(reactor: object, description: str, number: int) -> None:
-    echo(await contributors(number, StringDescriber(description)))
+    echo(await patrons(number, StringDescriber(description)))
