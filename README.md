@@ -2,7 +2,11 @@
 
 I've got a [patreon](https://www.patreon.com/creatorglyph), and I'm attempting
 to make the creative effort on the patreon *be* the software that I'm writing,
-and not pivot to being a full-time streamer or video editor.
+and not pivot to being a full-time streamer or video editor.  But software
+doesn't have an ending credits roll to add patrons' names to, so I've been
+trying to find somewhere to put them.
+
+This is my attmept.  As I put it to my existing patrons:
 
 > The way I intend for [rewards] to work is that I'll put all the preferred
 > names in a database with a counter equivalent to sponsorship level (so, 1 for
