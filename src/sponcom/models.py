@@ -176,8 +176,6 @@ async def patrons(driver: AsyncConnectable, howMany: int, describer: GratitudeDe
                 await sponsor.thank(timestamp, describer)
                 names.append(sponsor.name)
             if names:
-                if len(names) > 1:
-                    names[-1] = "and " + names[-1]
                 return (", " if len(names) > 2 else " ").join(names)
             else:
                 await acc.fullReset()
