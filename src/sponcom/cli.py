@@ -141,9 +141,13 @@ async def prepare(
     import os
     from pprint import pformat
 
+    preamble = "This commit was sponsored by"
+
     echo(pformat(dict(os.environ)))
     with Path(premessagepath).open("r+") as f:
         userMessage = f.read()
+        if preamble in userMessage:
+            return
 
         with popen("git rev-parse HEAD") as gitProcess:
             parentCommit = gitProcess.read().strip()
@@ -163,9 +167,8 @@ async def prepare(
         msg = wrap(
             dedent(
                 f"""\
-                This commit was sponsored by {patronText}, and my other
-                patrons.  If you want to join them, you can support my work at
-                {creatorURL}.
+                {preamble} {patronText}, and my other patrons.  If you want to
+                join them, you can support my work at {creatorURL}.
                 """
             )
         )
