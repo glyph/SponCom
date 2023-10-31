@@ -1,5 +1,3 @@
-
-
 from typing import AsyncIterable, Protocol
 
 from dbxs import many, maybe, one, query, statement
@@ -134,5 +132,3 @@ class SponsorStorage(Protocol):
     )
     async def commitForGratitude(self, gratitude_id: str) -> CommitRecord | None:
         ...
-
-
