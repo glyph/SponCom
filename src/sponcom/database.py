@@ -2,6 +2,8 @@ from typing import AsyncIterable, Protocol
 
 from dbxs import many, maybe, one, query, statement
 
+from sponcom.models import ThanksScore
+
 from .models import CommitRecord, Gratitude, Sponsor
 
 
@@ -18,8 +20,7 @@ class SponsorStorage(Protocol):
         """,
         load=many(Sponsor),
     )
-    def sponsors(self) -> AsyncIterable[Sponsor]:
-        ...
+    def sponsors(self) -> AsyncIterable[Sponsor]: ...
 
     @statement(
         sql="""
@@ -37,8 +38,7 @@ class SponsorStorage(Protocol):
         name: str,
         level: int,
         current: int,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @query(
         sql="""
@@ -49,8 +49,7 @@ class SponsorStorage(Protocol):
         """,
         load=one(Sponsor),
     )
-    async def sponsorByID(self, id: str) -> Sponsor:
-        ...
+    async def sponsorByID(self, id: str) -> Sponsor: ...
 
     @query(
         sql="""
@@ -63,8 +62,7 @@ class SponsorStorage(Protocol):
         """,
         load=many(Sponsor),
     )
-    def draw(self, limit: int) -> AsyncIterable[Sponsor]:
-        ...
+    def draw(self, limit: int) -> AsyncIterable[Sponsor]: ...
 
     @query(
         sql="""
@@ -75,8 +73,7 @@ class SponsorStorage(Protocol):
         """,
         load=many(Gratitude),
     )
-    def listGratitude(self) -> AsyncIterable[Gratitude]:
-        ...
+    def listGratitude(self) -> AsyncIterable[Gratitude]: ...
 
     @statement(
         sql="""
@@ -86,8 +83,7 @@ class SponsorStorage(Protocol):
     )
     async def addGratitude(
         self, id: str, sponsor_id: str, timestamp: float, description: str
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @statement(
         sql="""
@@ -107,8 +103,7 @@ class SponsorStorage(Protocol):
         commitSource: str | None,
         commitObject: str | None,
         parentCommit: str,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @statement(
         sql="""
@@ -116,8 +111,20 @@ class SponsorStorage(Protocol):
         SET current = level;
         """,
     )
-    async def fullReset(self) -> None:
-        ...
+    async def fullReset(self) -> None: ...
+
+    @query(
+        sql="""
+        SELECT sponsor.name, count(gratitude.id)
+        FROM sponsor
+        JOIN gratitude ON sponsor.id=sponsor_id
+        GROUP BY sponsor.id
+        ORDER BY count(gratitude.id) DESC
+        LIMIT {n}
+        """,
+        load=many(ThanksScore),
+    )
+    def topSponsors(self, n: int) -> AsyncIterable[ThanksScore]: ...
 
     @query(
         sql="""
@@ -130,5 +137,4 @@ class SponsorStorage(Protocol):
         """,
         load=maybe(CommitRecord),
     )
-    async def commitForGratitude(self, gratitude_id: str) -> CommitRecord | None:
-        ...
+    async def commitForGratitude(self, gratitude_id: str) -> CommitRecord | None: ...

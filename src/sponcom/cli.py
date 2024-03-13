@@ -7,7 +7,15 @@ from os import popen
 from pathlib import Path
 from sys import argv
 from textwrap import dedent, wrap
-from typing import Callable, Concatenate, Coroutine, Literal, ParamSpec, TypeVar
+from typing import (
+    AsyncIterable,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Literal,
+    ParamSpec,
+    TypeVar,
+)
 
 from click import ClickException, argument, echo, group
 from dbxs import accessor
@@ -20,7 +28,7 @@ from sponcom.models import CommitDescriber, Sponsor, StringDescriber, builder, p
 from sponcom.schema_builder import SchemaBuilder
 
 # This should probably go in a configuration file.  Maybe a template?
-creatorURL = "https://glyph.im/sponsors/"
+creatorURL = "https://glyph.im/patrons/"
 T = TypeVar("T")
 
 
@@ -71,6 +79,22 @@ async def list(reactor: object) -> None:
             echo(f"{sponsor.current=} {sponsor.name=} {sponsor.level=} {sponsor.id=}")
 
 
+async def aenumerate(ai: AsyncIterable[T], start=0) -> AsyncIterable[tuple[int, T]]:
+    async for each in ai:
+        yield start, each
+        start += 1
+
+
+@main.command()
+@reactive
+@argument("n", type=int, default=5)
+async def hiscores(reactor: object, n: int) -> None:
+    async with transaction(driver) as t:
+        db = SponsorAccessor(t)
+        async for p, thank in aenumerate(db.topSponsors(n), start=1):
+            echo(f"{p}. {thank.name}")
+
+
 @main.command()
 @reactive
 async def history(reactor: object) -> None:
@@ -98,16 +122,15 @@ async def add(reactor: object, name: str, level: int) -> None:
         echo("saved!")
 
 
-
-
-
 # This is the git prepare-commit-message hook.
 @main.command(hidden=True)
 
 # It takes one to three parameters.
 
+
 @argument("premessagepath")
 # The first is the name of the file that contains the commit log message.
+
 
 @argument("commitsource", default=None, required=False)
 # The second is the source of the commit message, and can be:
@@ -124,9 +147,11 @@ async def add(reactor: object, name: str, level: int) -> None:
 # - commit, followed by a commit object name (if a -c, -C or --amend option was
 #   given).
 
+
 @argument("commitobject", default=None, required=False)
 # If the second argument is 'commit', then the third will be a commit object
 # name (if a -c, -C or --amend option was given).
+
 
 @reactive
 async def prepare(
@@ -167,7 +192,7 @@ async def prepare(
         msg = wrap(
             dedent(
                 f"""\
-                {preamble} {patronText}, and my other sponsors.  If you want to
+                {preamble} {patronText}, and my other patrons.  If you want to
                 join them, you can support my work at {creatorURL}.
                 """
             )

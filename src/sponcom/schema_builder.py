@@ -1,8 +1,9 @@
-
 from dataclasses import dataclass, field
 from typing import Callable, TypeVar
 
 T = TypeVar("T")
+
+
 @dataclass
 class SchemaBuilder:
     schema: str = ""
@@ -34,5 +35,3 @@ class SchemaBuilder:
             constraintText = f"\n    {constraintText}"
         self.constraintsYet = True
         self.pendingColumns.append(constraintText)
-
-

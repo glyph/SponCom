@@ -18,17 +18,17 @@ if TYPE_CHECKING:
 
 builder = SchemaBuilder()
 
+
 class GratitudeDescriber(Protocol):
     async def describeGratitude(
         self,
         storage: SponsorStorage,
         timestamp: float,
         gratitudeID: str,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    def descriptionString(self) -> str:
-        ...
+    def descriptionString(self) -> str: ...
+
 
 @builder.table("sponsor")
 @dataclass
@@ -120,6 +120,13 @@ class CommitRecord:
 
 
 @dataclass
+class ThanksScore:
+    storage: SponsorStorage
+    name: str
+    score: int
+
+
+@dataclass
 class CommitDescriber:
     userMessage: str
     preMessagePath: str
@@ -160,11 +167,12 @@ class StringDescriber:
         storage: SponsorStorage,
         timestamp: float,
         gratitudeID: str,
-    ) -> None:
-        ...
+    ) -> None: ...
 
 
-async def patrons(driver: AsyncConnectable, howMany: int, describer: GratitudeDescriber) -> str:
+async def patrons(
+    driver: AsyncConnectable, howMany: int, describer: GratitudeDescriber
+) -> str:
     from sponcom.cli import SponsorAccessor
 
     for repeat in range(2):
@@ -182,5 +190,3 @@ async def patrons(driver: AsyncConnectable, howMany: int, describer: GratitudeDe
                 echo("* resetting")
 
     return "just me"
-
-
