@@ -20,7 +20,7 @@ from sponcom.models import CommitDescriber, Sponsor, StringDescriber, builder, p
 from sponcom.schema_builder import SchemaBuilder
 
 # This should probably go in a configuration file.  Maybe a template?
-creatorURL = "https://patreon.com/creatorglyph"
+creatorURL = "https://glyph.im/sponsors/"
 T = TypeVar("T")
 
 
@@ -167,7 +167,7 @@ async def prepare(
         msg = wrap(
             dedent(
                 f"""\
-                {preamble} {patronText}, and my other patrons.  If you want to
+                {preamble} {patronText}, and my other sponsors.  If you want to
                 join them, you can support my work at {creatorURL}.
                 """
             )
