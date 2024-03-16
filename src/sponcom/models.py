@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from click import echo
-from dbxs.dbapi_async import AsyncConnectable
+from dbxs.async_dbapi import AsyncConnectable
 
 
 from .cli import transaction

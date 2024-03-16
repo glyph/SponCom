@@ -18,8 +18,11 @@ from typing import (
 )
 
 from click import ClickException, argument, echo, group
+
 from dbxs import accessor
-from dbxs.dbapi_async import adaptSynchronousDriver, transaction
+from dbxs.async_dbapi import transaction
+from dbxs.adapters.dbapi_twisted import adaptSynchronousDriver
+
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
 
