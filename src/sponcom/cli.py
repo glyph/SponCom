@@ -125,6 +125,16 @@ async def add(reactor: object, name: str, level: int) -> None:
         echo("saved!")
 
 
+@main.command()
+@argument("name")
+@argument("level", type=int)
+@reactive
+async def relevel(reactor: object, name: str, level: int) -> None:
+    async with transaction(driver) as t:
+        access = SponsorAccessor(t)
+        await (await access.sponsorByName(name)).relevel(level)
+
+
 # This is the git prepare-commit-message hook.
 @main.command(hidden=True)
 

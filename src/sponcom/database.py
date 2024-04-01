@@ -14,8 +14,7 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT
-            name, level, current
+        SELECT name, level, current, id
         FROM sponsor;
         """,
         load=many(Sponsor),
@@ -40,10 +39,14 @@ class SponsorStorage(Protocol):
         current: int,
     ) -> None: ...
 
+    @statement(
+        sql="UPDATE sponsor SET level = {newLevel} WHERE id = {sponsorID}",
+    )
+    async def setSponsorLevel(self, sponsorID: str, newLevel: int) -> None: ...
+
     @query(
         sql="""
-        SELECT
-            name, level, current
+        SELECT name, level, current, id
         FROM sponsor
         WHERE id = {id};
         """,
@@ -53,8 +56,7 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT
-            name, level, current, id
+        SELECT name, level, current, id
         FROM sponsor
         WHERE current > 0
         ORDER BY random()
@@ -66,8 +68,17 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT
-            id, sponsor_id, timestamp, description
+        SELECT name, level, current, id
+        FROM sponsor
+        WHERE name = {name}
+        """,
+        load=one(Sponsor),
+    )
+    async def sponsorByName(self, name: str) -> Sponsor: ...
+
+    @query(
+        sql="""
+        SELECT id, sponsor_id, timestamp, description
         FROM gratitude
         ORDER BY timestamp ASC
         """,
@@ -105,12 +116,7 @@ class SponsorStorage(Protocol):
         parentCommit: str,
     ) -> None: ...
 
-    @statement(
-        sql="""
-        UPDATE sponsor
-        SET current = level;
-        """,
-    )
+    @statement(sql="UPDATE sponsor SET current = level")
     async def fullReset(self) -> None: ...
 
     @query(

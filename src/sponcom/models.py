@@ -70,6 +70,8 @@ class Sponsor:
         self.current -= 1
         await self.save()
 
+    async def relevel(self, newLevel: int) -> None:
+        await self.storage.setSponsorLevel(self.id, newLevel)
 
 @builder.table("gratitude")
 @dataclass
