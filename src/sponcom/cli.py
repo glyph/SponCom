@@ -6,28 +6,20 @@ from functools import wraps
 from os import popen
 from pathlib import Path
 from sys import argv
-from textwrap import dedent, wrap
-from typing import (
-    AsyncIterable,
-    Callable,
-    Concatenate,
-    Coroutine,
-    Literal,
-    ParamSpec,
-    TypeVar,
-)
+from textwrap import dedent, indent, wrap
+from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
+                    ParamSpec, TypeVar)
 
 from click import ClickException, argument, echo, group
-
 from dbxs import accessor
-from dbxs.async_dbapi import transaction
 from dbxs.adapters.dbapi_twisted import adaptSynchronousDriver
-
+from dbxs.async_dbapi import transaction
 from twisted.internet.defer import Deferred
 from twisted.internet.task import react
 
 from sponcom.database import SponsorStorage
-from sponcom.models import CommitDescriber, Sponsor, StringDescriber, builder, patrons
+from sponcom.models import (CommitDescriber, Sponsor, StringDescriber, builder,
+                            patrons)
 from sponcom.schema_builder import SchemaBuilder
 
 # This should probably go in a configuration file.  Maybe a template?
@@ -176,12 +168,9 @@ async def prepare(
     """
     Git prepare-commit-message hook.
     """
-    import os
-    from pprint import pformat
-
+    echo("SponCom generating commit message...")
     preamble = "This commit was sponsored by"
 
-    echo(pformat(dict(os.environ)))
     with Path(premessagepath).open("r+") as f:
         userMessage = f.read()
         if preamble in userMessage:
@@ -217,6 +206,8 @@ async def prepare(
             f.write("\n")
 
         f.write("\n".join(msg))
+    echo(indent("  ", "\n".join(msg)))
+    echo("Generated!")
 
 
 @main.command()
