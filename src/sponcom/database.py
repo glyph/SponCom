@@ -44,6 +44,16 @@ class SponsorStorage(Protocol):
     )
     async def setSponsorLevel(self, sponsorID: str, newLevel: int) -> None: ...
 
+    @statement(
+        sql="""
+            INSERT INTO relevel
+            (sponsor_id, timestamp, description, previous_level, new_level)
+            VALUES
+            ({sponsorID}, {when}, {why}, {old}, {new})
+            """,
+    )
+    async def recordLevelChange(self, sponsorID: str, when: float, old: int, new: int, why: str) -> None: ...
+
     @query(
         sql="""
         SELECT name, level, current, id

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,6 +29,40 @@ class GratitudeDescriber(Protocol):
     ) -> None: ...
 
     def descriptionString(self) -> str: ...
+
+
+@builder.table("relevel")
+@dataclass
+class LevelChange:
+    storage: SponsorStorage = field(repr=False)
+    sponsor_id: str
+    builder.column("sponsor_id UUID NOT NULL")
+
+    timestamp: float
+    builder.column("timestamp REAL NOT NULL")
+
+    description: str
+    builder.column("description TEXT NOT NULL")
+
+    previousLevel: int
+    builder.column("previous_level REAL NOT NULL")
+
+    newLevel: int
+    builder.column("new_level REAL NOT NULL")
+
+    builder.constraint("FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)")
+    saved: bool = False
+
+    async def save(self) -> None:
+        assert not self.saved, "cannot modify level changes"
+        self.saved = True
+        await self.storage.recordLevelChange(
+            sponsorID=self.sponsor_id,
+            when=self.timestamp,
+            old=self.previousLevel,
+            new=self.newLevel,
+            why=self.description,
+        )
 
 
 @builder.table("sponsor")
@@ -70,8 +105,13 @@ class Sponsor:
         self.current -= 1
         await self.save()
 
-    async def relevel(self, newLevel: int) -> None:
+    async def relevel(self, newLevel: int, when: float, why: str) -> None:
+        await LevelChange(
+            self.storage, self.id, when, why, self.current, newLevel
+        ).save()
         await self.storage.setSponsorLevel(self.id, newLevel)
+        self.level = newLevel
+
 
 @builder.table("gratitude")
 @dataclass

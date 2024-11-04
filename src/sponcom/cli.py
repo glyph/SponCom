@@ -15,6 +15,7 @@ from dbxs import accessor
 from dbxs.adapters.dbapi_twisted import adaptSynchronousDriver
 from dbxs.async_dbapi import transaction
 from twisted.internet.defer import Deferred
+from twisted.internet.interfaces import IReactorTime
 from twisted.internet.task import react
 
 from sponcom.database import SponsorStorage
@@ -120,11 +121,13 @@ async def add(reactor: object, name: str, level: int) -> None:
 @main.command()
 @argument("name")
 @argument("level", type=int)
+@argument("why", type=str)
 @reactive
-async def relevel(reactor: object, name: str, level: int) -> None:
+async def relevel(reactor: object, name: str, level: int, why: str) -> None:
+    clock = IReactorTime(reactor)
     async with transaction(driver) as t:
         access = SponsorAccessor(t)
-        await (await access.sponsorByName(name)).relevel(level)
+        await (await access.sponsorByName(name)).relevel(level, clock.seconds(), why)
 
 
 # This is the git prepare-commit-message hook.
