@@ -23,8 +23,6 @@ sponcom = "sponcom.cli:main"
 [project.urls]
 Home = "https://glyph.im/sponcom/"
 
-
-
-
-
+[tool.mypy]
+plugins = ["mypy_zope:plugin"]
 
