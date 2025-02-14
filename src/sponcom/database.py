@@ -40,7 +40,7 @@ class SponsorStorage(Protocol):
     ) -> None: ...
 
     @statement(
-        sql="UPDATE sponsor SET level = {newLevel} WHERE id = {sponsorID}",
+        sql="UPDATE sponsor SET level = {newLevel} WHERE id = ]{sponsorID}",
     )
     async def setSponsorLevel(self, sponsorID: str, newLevel: int) -> None: ...
 
@@ -52,7 +52,9 @@ class SponsorStorage(Protocol):
             ({sponsorID}, {when}, {why}, {old}, {new})
             """,
     )
-    async def recordLevelChange(self, sponsorID: str, when: float, old: int, new: int, why: str) -> None: ...
+    async def recordLevelChange(
+        self, sponsorID: str, when: float, old: int, new: int, why: str
+    ) -> None: ...
 
     @query(
         sql="""
@@ -128,6 +130,16 @@ class SponsorStorage(Protocol):
 
     @statement(sql="UPDATE sponsor SET current = level")
     async def fullReset(self) -> None: ...
+
+    @statement(
+        sql="""
+        INSERT INTO imported_gratitude
+        (gratitude_id, timestamp, processed)
+        VALUES
+        ({gratitudeID}, {timestamp}, false)
+        """
+    )
+    async def markGratitudeImport(self, gratitudeID: str, timestamp: float) -> None: ...
 
     @query(
         sql="""

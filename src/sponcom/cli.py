@@ -7,8 +7,15 @@ from os import popen
 from pathlib import Path
 from sys import argv
 from textwrap import dedent, indent, wrap
-from typing import (AsyncIterable, Callable, Concatenate, Coroutine, Literal,
-                    ParamSpec, TypeVar)
+from typing import (
+    AsyncIterable,
+    Callable,
+    Concatenate,
+    Coroutine,
+    Literal,
+    ParamSpec,
+    TypeVar,
+)
 
 from click import ClickException, argument, echo, group
 from dbxs import accessor
@@ -19,8 +26,7 @@ from twisted.internet.interfaces import IReactorTime
 from twisted.internet.task import react
 
 from sponcom.database import SponsorStorage
-from sponcom.models import (CommitDescriber, Sponsor, StringDescriber, builder,
-                            patrons)
+from sponcom.models import CommitDescriber, Sponsor, StringDescriber, builder, patrons
 from sponcom.schema_builder import SchemaBuilder
 
 # This should probably go in a configuration file.  Maybe a template?
@@ -57,7 +63,9 @@ P = ParamSpec("P")
 
 
 def reactive(
-    thunk: Callable[Concatenate[object, P], Coroutine[Deferred[object], object, object]]
+    thunk: Callable[
+        Concatenate[object, P], Coroutine[Deferred[object], object, object]
+    ],
 ) -> Callable[P, None]:
     @wraps(thunk)
     def cmd(*args, **kw) -> None:
@@ -79,6 +87,41 @@ async def aenumerate(ai: AsyncIterable[T], start=0) -> AsyncIterable[tuple[int, 
     async for each in ai:
         yield start, each
         start += 1
+
+
+@main.command()
+@reactive
+
+@main.command()
+@reactive
+@argument("path", type=str)
+async def absorb(reactor: object, path: str) -> None:
+    otherDB = adaptSynchronousDriver(
+        lambda: sqlite3.connect(path),
+        sqlite3.paramstyle,
+    )
+    async with transaction(otherDB) as t:
+        otherGratitudes = [
+            otherGratitude
+            async for otherGratitude in SponsorAccessor(t).listGratitude()
+        ]
+        # 🥔😿: we are doing N queries here, where we *should* bake this all
+        # into the single initial query
+        for otherGratitude in otherGratitudes:
+            await otherGratitude.loadCause()
+    imported = 0
+    async with transaction(driver) as t:
+        acc = SponsorAccessor(t)
+        myGratitudes = {
+            myGratitude.id: myGratitude
+            async for myGratitude in acc.listGratitude()
+        }
+        onlyInOther = [each for each in otherGratitudes if each.id not in myGratitudes]
+        for toImport in onlyInOther:
+            imported += 1
+            print(f"importing record {imported}...")
+            await toImport.importTo(acc)
+    print(f"imported {imported} records total")
 
 
 @main.command()

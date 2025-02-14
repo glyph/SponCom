@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -131,11 +130,53 @@ class Gratitude:
 
     builder.constraint("FOREIGN KEY (sponsor_id) REFERENCES sponsor(id)")
 
+    # note: 'None' has two meanings here; 'not loaded' and 'no cause found'
+    cause: CommitRecord | None = None
+
+    async def loadCause(self) -> None:
+        self.cause = await self.storage.commitForGratitude(self.id)
+
+    async def importTo(self, newStorage: SponsorStorage) -> None:
+        await newStorage.addGratitude(
+            id=self.id,
+            sponsor_id=self.sponsor_id,
+            timestamp=self.timestamp,
+            description=self.description,
+        )
+        if self.cause is not None:
+            await self.cause.importTo(newStorage)
+        await newStorage.markGratitudeImport(gratitudeID=self.id, timestamp=time())
+
+
+@builder.table("imported_gratitude")
+@dataclass
+class ImportedGratitude:
+    """
+    An L{ImportedGratitude} indicates a gratitude record that was imported from
+    another system but which has not yet been accounted for by the selection
+    algorithm in this database.
+
+    Presently, this is entirely unhandled; however, if it were to be handled,
+    the mechanism would have to be something like: every time a user with
+    remaining unprocessed, imported gratitude is selected for a shout-out, one
+    of their unprocssed gratitudes is flagged as processed (i.e.: soft-deleted)
+    and another user is selected in their place for that shout-out.
+    """
+
+    storage: SponsorStorage = field(repr=False)
+    gratitudeID: str
+    builder.column("gratitude_id UUID NOT NULL")
+    timestamp: float
+    builder.column("timestamp REAL NOT NULL")
+    processed: bool
+    builder.column("processed BOOLEAN NOT NULL")
+    builder.constraint("FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)")
+
 
 @builder.table("precommit")
 @dataclass
 class CommitRecord:
-    storage: SponsorStorage
+    storage: SponsorStorage = field(repr=False)
 
     gratitudeID: str
     builder.column("gratitude_id UUID NOT NULL")
@@ -160,10 +201,21 @@ class CommitRecord:
 
     builder.constraint("FOREIGN KEY (gratitude_id) REFERENCES gratitude(id)")
 
+    async def importTo(self, newStorage: SponsorStorage) -> None:
+        await newStorage.addCommit(
+            gratitudeID=self.gratitudeID,
+            userMessage=self.commitMessage,
+            workingDirectory=self.workingDirectory,
+            preMessagePath=self.preMessagePath,
+            commitSource=self.commitSource,
+            commitObject=self.commitObject,
+            parentCommit=self.parentCommit,
+        )
+
 
 @dataclass
 class ThanksScore:
-    storage: SponsorStorage
+    storage: SponsorStorage = field(repr=False)
     name: str
     score: int
 
