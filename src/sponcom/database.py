@@ -40,7 +40,7 @@ class SponsorStorage(Protocol):
     ) -> None: ...
 
     @statement(
-        sql="UPDATE sponsor SET level = {newLevel} WHERE id = ]{sponsorID}",
+        sql="UPDATE sponsor SET level = {newLevel} WHERE id = {sponsorID}",
     )
     async def setSponsorLevel(self, sponsorID: str, newLevel: int) -> None: ...
 
