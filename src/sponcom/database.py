@@ -134,7 +134,7 @@ class SponsorStorage(Protocol):
         parentCommit: str,
     ) -> None: ...
 
-    @statement(sql="UPDATE sponsor SET current = level")
+    @statement(sql="UPDATE sponsor SET current = current + level")
     async def fullReset(self) -> None: ...
 
     @statement(
