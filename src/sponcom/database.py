@@ -71,6 +71,12 @@ class SponsorStorage(Protocol):
         SELECT name, level, current, id
         FROM sponsor
         WHERE current > 0
+            AND id not in (
+                SELECT sponsor.id FROM gratitude
+                JOIN sponsor ON
+                    (gratitude.sponsor_id = sponsor.id)
+                WHERE timestamp = (select max(timestamp) from gratitude)
+            )
         ORDER BY random()
         LIMIT {limit};
         """,
