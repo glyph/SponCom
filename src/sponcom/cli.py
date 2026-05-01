@@ -91,9 +91,6 @@ async def aenumerate(ai: AsyncIterable[T], start=0) -> AsyncIterable[tuple[int, 
 
 @main.command()
 @reactive
-
-@main.command()
-@reactive
 @argument("path", type=str)
 async def absorb(reactor: object, path: str) -> None:
     otherDB = adaptSynchronousDriver(
@@ -246,12 +243,10 @@ async def prepare(
             )
         )
 
-        if userMessage[-1:] != "\n":
-            f.write("\n\n")
-        elif userMessage[-2:] != "\n\n":
-            f.write("\n")
-
+        f.seek(0)
+        f.write("\n\n")
         f.write("\n".join(msg))
+        f.write(userMessage)
     echo(indent("\n".join(msg), "  "))
     echo("Generated!")
 

@@ -68,14 +68,24 @@ class SponsorStorage(Protocol):
 
     @query(
         sql="""
-        SELECT name, level, current, id
-        FROM sponsor
-        WHERE current > 0
-            AND id not in (
-                SELECT sponsor.id FROM gratitude
-                JOIN sponsor ON
-                    (gratitude.sponsor_id = sponsor.id)
-                WHERE timestamp = (select max(timestamp) from gratitude)
+        SELECT
+            name, level, current, id
+        FROM
+            sponsor
+        WHERE
+            sponsor.current > 0
+            -- Do not allow for the same sponsor to be drawn for two 'thank's in a
+            -- row; a single 'thank' group of gratitudes is currently grouped by all
+            -- its rows having an exactly-equal timestamp.
+            AND sponsor.id not in (
+                SELECT
+                    sponsor_id
+                FROM
+                    gratitude
+                WHERE
+                    timestamp = (
+                        select max(timestamp) from gratitude
+                    )
             )
         ORDER BY random()
         LIMIT {limit};
