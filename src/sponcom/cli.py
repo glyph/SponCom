@@ -247,6 +247,7 @@ async def prepare(
         f.write("\n\n")
         f.write("\n".join(msg))
         f.write(userMessage)
+        f.write("\n")
     echo(indent("\n".join(msg), "  "))
     echo("Generated!")
 
