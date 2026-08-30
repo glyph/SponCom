@@ -4,7 +4,7 @@ from dbxs import many, maybe, one, query, statement
 
 from sponcom.models import ThanksScore
 
-from .models import CommitRecord, Gratitude, Sponsor
+from .models import CommitRecord, Gratitude, Sponsor, LevelChange
 
 
 class SponsorStorage(Protocol):
@@ -43,6 +43,16 @@ class SponsorStorage(Protocol):
         sql="UPDATE sponsor SET level = {newLevel} WHERE id = {sponsorID}",
     )
     async def setSponsorLevel(self, sponsorID: str, newLevel: int) -> None: ...
+
+    @query(
+        sql="""SELECT
+            sponsor_id, timestamp, description, previous_level, new_level
+            FROM relevel
+            ORDER BY timestamp ASC
+            """,
+        load=many(LevelChange),
+    )
+    def levelHistory(self) -> AsyncIterable[LevelChange]: ...
 
     @statement(
         sql="""

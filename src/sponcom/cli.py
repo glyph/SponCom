@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
 from os import popen
@@ -9,6 +10,7 @@ from sys import argv
 from textwrap import dedent, indent, wrap
 from typing import (
     AsyncIterable,
+    Awaitable,
     Callable,
     Concatenate,
     Coroutine,
@@ -110,8 +112,7 @@ async def absorb(reactor: object, path: str) -> None:
     async with transaction(driver) as t:
         acc = SponsorAccessor(t)
         myGratitudes = {
-            myGratitude.id: myGratitude
-            async for myGratitude in acc.listGratitude()
+            myGratitude.id: myGratitude async for myGratitude in acc.listGratitude()
         }
         onlyInOther = [each for each in otherGratitudes if each.id not in myGratitudes]
         for toImport in onlyInOther:
@@ -131,21 +132,48 @@ async def hiscores(reactor: object, n: int) -> None:
             echo(f"{p}. {thank.name}")
 
 
+@dataclass
+class ReadThroughCache[K, T]:
+    _lookup: Callable[[K], Awaitable[T]]
+    _values: dict[K, T] = field(default_factory=dict)
+
+    async def __call__(self, key: K) -> T:
+        if key in self._values:
+            return self._values[key]
+        else:
+            result = self._values[key] = await self._lookup(key)
+            return result
+
+
 @main.command()
 @reactive
 async def history(reactor: object) -> None:
     async with transaction(driver) as t:
         db = SponsorAccessor(t)
+        getSponsor = ReadThroughCache(db.sponsorByID)
+        getCommit = ReadThroughCache(db.commitForGratitude)
         async for gratitude in db.listGratitude():
-            sponsor = await db.sponsorByID(gratitude.sponsor_id)
+            sponsor = await getSponsor(gratitude.sponsor_id)
             isotime = (
                 datetime.fromtimestamp(gratitude.timestamp).astimezone().isoformat()
             )
             echo(f"{isotime} {sponsor.name!r} {gratitude.description!r}")
-            commit = await db.commitForGratitude(gratitude.id)
+            commit = await getCommit(gratitude.id)
             if commit is not None:
                 echo(f"    commit in {commit.workingDirectory} ({commit.parentCommit})")
 
+@main.command()
+@reactive
+async def level_history(reactor: object) -> None:
+    async with transaction(driver) as t:
+        db = SponsorAccessor(t)
+        getSponsor = ReadThroughCache(db.sponsorByID)
+        async for relevel in db.levelHistory():
+            sponsor = await getSponsor(relevel.sponsor_id)
+            isotime = (
+                datetime.fromtimestamp(relevel.timestamp).astimezone().isoformat()
+            )
+            echo(f"{isotime} {sponsor.name!r} {relevel.description!r}")
 
 @main.command()
 @argument("name")
