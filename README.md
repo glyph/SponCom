@@ -18,3 +18,7 @@ This is my attempt.  As I put it to my existing patrons:
 
 So, this is that software.  It's hard-coded to my own details right now, but if
 it sounds interesting, feel free to send some PRs.
+
+## AI Policy
+
+SponCom follows the [Twisted AI Policy](https://docs.twisted.org/en/latest/development/ai-policy.html). This means this project does not allow the inclusion of the outputs of generative AI tools.
